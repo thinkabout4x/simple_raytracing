@@ -1,38 +1,25 @@
+use std::f32::consts::PI;
+
 use image::{Rgb, RgbImage};
-
-// pub fn image_creator(width: u32, height: u32, path: &str) {
-//     let buffer = ImageBuffer::from_fn(width, height, |x, y| {
-//         let u8_max = 255.0;
-//         let r = (u8_max*(x as f64 / (width-1) as f64)) as u8;
-//         let g = (u8_max*(y as f64 / (height-1) as f64)) as u8;
-//         let b = (u8_max*0.0) as u8;
-
-//         Rgb([r,g,b])
-//     }); 
-
-//     buffer.save(path).unwrap();
-// }
-
+use nalgebra::{Vector3, vector};
 pub struct Image{
     width: u32,
     height: u32,
+    color: Rgb<u8>,
     image: RgbImage
-}
-
-pub struct Point{
-    x: u32,
-    y: u32
 }
 
 pub struct Sphere{
     radius: u32,
-    center: Point, 
+    coordinates: Vector3<f32>, 
     color: Rgb<u8>,
 }
 
 impl Image{
-    pub fn new(width: u32, height: u32) -> Image{
-        Image{width, height, image: RgbImage::new(width, height)}
+    pub fn new(width: u32, height: u32, color: [u8; 3]) -> Image{
+        let mut img = Image{width, height, image: RgbImage::new(width, height), color: Rgb(color)};
+        img.set_canvas_color(color);
+        img
     }
 
     pub fn set_canvas_color(&mut self, color: [u8; 3]) {
@@ -42,10 +29,19 @@ impl Image{
         }
     }
 
-    pub fn draw_sphere(&mut self, sphere: Sphere){
+
+    pub fn render(&mut self, sphere: &Sphere){
+        let fov = PI/2.;
+        let origin = vector![0.,0.,0.];
         for (x, y, pixel) in self.image.enumerate_pixels_mut(){
-            if (x as i32-sphere.center.x as i32).pow(2)+(y as i32-sphere.center.y as i32).pow(2) <= (sphere.radius.pow(2)) as i32{
+            let x: f32 = (2.*((x as f32)+0.5)/(self.width as f32)-1.)*(fov/2.).tan()*(self.width as f32)/(self.height as f32);
+            let y: f32 = -(2.*((y as f32)+0.5)/(self.height as f32)-1.)*(fov/2.).tan();
+            let dir: Vector3<f32> = vector![x,y, -1.].normalize(); 
+
+            if !sphere.ray_intersect(&origin, &dir){
                 *pixel = sphere.color;
+            } else {
+                *pixel = self.color;
             }
         }
     }
@@ -56,10 +52,34 @@ impl Image{
 }
 
 impl Sphere{
-    pub fn new(radius: u32, x: u32, y: u32, color: [u8; 3]) -> Sphere{
-        let center = Point { x, y };
+    pub fn new(radius: u32, coordinates: [f32; 3], color: [u8; 3]) -> Sphere{
+        let coordinates = vector![coordinates[0], coordinates[1], coordinates[2]];
         let color = Rgb(color);
-        Sphere{ radius, center, color}
+        Sphere{ radius, coordinates, color}
+    }
+
+    fn ray_intersect(&self, &origin: &Vector3<f32>, &dir: &Vector3<f32>) -> bool{
+        let l: Vector3<f32> = self.coordinates - origin;
+        let tca = l.dot(&dir);
+        let d2 = l.dot(&l) - tca*tca;
+        if d2 > (self.radius.pow(2)) as f32{
+             return false;
+        } else {
+            let thc = (self.radius.pow(2) as f32 - d2).sqrt();
+            let t0 = tca - thc;
+            let t1 = tca + thc;
+            if t0 < 0.{
+                if t1 < 0.{
+                    return false;
+                } else {
+                    return true;
+                }
+            } else {
+                return true;
+            }
+
+        }
+
     }
 
 }
