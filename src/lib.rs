@@ -1,6 +1,6 @@
 use std::f32::consts::PI;
 
-use image::{Rgb, RgbImage};
+use image::{Rgb, RgbImage, Pixel};
 use nalgebra::{Vector3, vector};
 pub struct Image{
     width: u32,
@@ -13,6 +13,11 @@ pub struct Sphere{
     radius: u32,
     coordinates: Vector3<f32>, 
     color: Rgb<u8>,
+}
+
+pub struct Light {
+    coordinates: Vector3<f32>,
+    intensity: f32,
 }
 
 impl Image{
@@ -29,8 +34,7 @@ impl Image{
         }
     }
 
-
-    pub fn render(&mut self, sphere: &Sphere){
+    pub fn render(&mut self, spheres: &Vec<Sphere>,  lights: &Vec<Light>){
         let fov = PI/2.;
         let origin = vector![0.,0.,0.];
         for (x, y, pixel) in self.image.enumerate_pixels_mut(){
@@ -38,11 +42,8 @@ impl Image{
             let y: f32 = -(2.*((y as f32)+0.5)/(self.height as f32)-1.)*(fov/2.).tan();
             let dir: Vector3<f32> = vector![x,y, -1.].normalize(); 
 
-            if !sphere.ray_intersect(&origin, &dir){
-                *pixel = sphere.color;
-            } else {
-                *pixel = self.color;
-            }
+            *pixel = cast_ray(&self.color, &spheres, &origin, &dir, &lights);
+
         }
     }
 
@@ -58,28 +59,68 @@ impl Sphere{
         Sphere{ radius, coordinates, color}
     }
 
-    fn ray_intersect(&self, &origin: &Vector3<f32>, &dir: &Vector3<f32>) -> bool{
+    fn ray_intersect(&self, &origin: &Vector3<f32>, &dir: &Vector3<f32>) -> Option<f32>{
         let l: Vector3<f32> = self.coordinates - origin;
         let tca = l.dot(&dir);
         let d2 = l.dot(&l) - tca*tca;
         if d2 > (self.radius.pow(2)) as f32{
-             return false;
+             return None;
         } else {
             let thc = (self.radius.pow(2) as f32 - d2).sqrt();
-            let t0 = tca - thc;
+            let mut t0 = tca - thc;
             let t1 = tca + thc;
             if t0 < 0.{
-                if t1 < 0.{
-                    return false;
+                t0 = t1;
+                if t0 < 0.{
+                    return None;
                 } else {
-                    return true;
+                    return Some(t0);
                 }
             } else {
-                return true;
+                return Some(t0);
             }
-
         }
 
     }
+
+}
+
+impl Light{
+    pub fn new(coordinates: [f32; 3], intensity: f32) -> Light{
+        let coordinates = vector![coordinates[0], coordinates[1], coordinates[2]];
+        Light{coordinates, intensity}
+    }
+}
+
+fn cast_ray(canvas_color: &Rgb<u8>, spheres: &Vec<Sphere>, origin: &Vector3<f32>, dir: &Vector3<f32>, lights: &Vec<Light>) -> Rgb<u8>{
+    let mut sphere_dist= f32::MAX;
+    let mut pixel_color = *canvas_color;
+    
+
+    for sphere in spheres{
+        match sphere.ray_intersect(&origin, &dir){
+            Some(x) => {
+                if x < sphere_dist{
+                    sphere_dist = x;
+                    let hit = origin + dir*sphere_dist;
+                    let n = (hit - sphere.coordinates).normalize();
+                    pixel_color = sphere.color;
+
+                    let mut diffuse_light_energy: f32 = 0.;
+                    for light in lights{
+                        let light_dir = (light.coordinates-hit).normalize();
+                        diffuse_light_energy += light.intensity * light_dir.dot(&n);
+                        
+                    }
+                    pixel_color = pixel_color.map(|x| {(((x as f32/255.)*diffuse_light_energy)*(255. as f32)) as u8});
+
+                    
+                }
+            }
+            None => {}
+        };
+    }
+
+    pixel_color
 
 }
