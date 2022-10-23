@@ -1,7 +1,7 @@
-use std::f32::consts::PI;
-
+use std::{f32::consts::PI};
 use image::{Rgb, RgbImage, Pixel};
-use nalgebra::{Vector3, vector};
+use nalgebra::{Vector3, Vector2, vector};
+
 pub struct Image{
     width: u32,
     height: u32,
@@ -13,6 +13,8 @@ pub struct Sphere{
     radius: u32,
     coordinates: Vector3<f32>, 
     color: Rgb<u8>,
+    albedo: Vector2<f32>,
+    specular_exponent: f32
 }
 
 pub struct Light {
@@ -53,10 +55,11 @@ impl Image{
 }
 
 impl Sphere{
-    pub fn new(radius: u32, coordinates: [f32; 3], color: [u8; 3]) -> Sphere{
+    pub fn new(radius: u32, coordinates: [f32; 3], color: [u8; 3], albedo: [f32; 2], specular_exponent: f32) -> Sphere{
         let coordinates = vector![coordinates[0], coordinates[1], coordinates[2]];
+        let albedo = vector![albedo[0], albedo[1]];
         let color = Rgb(color);
-        Sphere{ radius, coordinates, color}
+        Sphere{ radius, coordinates, color, albedo, specular_exponent}
     }
 
     fn ray_intersect(&self, &origin: &Vector3<f32>, &dir: &Vector3<f32>) -> Option<f32>{
@@ -104,7 +107,7 @@ fn cast_ray(canvas_color: &Rgb<u8>, spheres: &Vec<Sphere>, origin: &Vector3<f32>
                     let hit = origin + dir*sphere_dist;
                     let n = (hit - sphere.coordinates).normalize();
                     pixel_color = sphere.color;
-                    pixel_color = diffuse_light(&pixel_color, lights, &hit, &n);
+                    pixel_color = diffuse_and_specular_light(&pixel_color, lights, &hit, &n, dir, sphere);
                     
                 }
             }
@@ -114,12 +117,24 @@ fn cast_ray(canvas_color: &Rgb<u8>, spheres: &Vec<Sphere>, origin: &Vector3<f32>
     pixel_color
 }
 
-fn diffuse_light(color: &Rgb<u8>, lights: &Vec<Light> ,point: &Vector3<f32>, normal: &Vector3<f32>) -> Rgb<u8> {
-    let mut diffuse_light_energy: f32 = 0.;
+fn diffuse_and_specular_light(color: &Rgb<u8>, lights: &Vec<Light> ,point: &Vector3<f32>, normal: &Vector3<f32>, dir: &Vector3<f32>,sphere: &Sphere) -> Rgb<u8> {
+    let mut diffuse_light_intensity: f32 = 0.;
+    let mut specular_light_intensity: f32 = 0.;
     for light in lights{
         let light_dir = (light.coordinates-point).normalize();
-        diffuse_light_energy += light.intensity * light_dir.dot(normal);                
+        diffuse_light_intensity += light.intensity * f32::max(0.,light_dir.dot(normal));  
+        specular_light_intensity += (f32::max(0.,reflect(&light_dir, normal).dot(dir))).powf(sphere.specular_exponent)*light.intensity;
     }
-    let result = color.map(|x| {(((x as f32/255.)*diffuse_light_energy)*(255. as f32)) as u8});
+    let coeff = diffuse_light_intensity*sphere.albedo[0]+specular_light_intensity*sphere.albedo[1];
+
+    let result = color.map(|mut x| {
+        let value = (x as f32/255.)*(coeff);
+        x = (value*(255. as f32)) as u8;
+        x
+    });
     result
+}
+
+fn reflect(i: &Vector3<f32>, n: &Vector3<f32>) -> Vector3<f32>{
+    return i-2.*n*(i.dot(n));
 }
