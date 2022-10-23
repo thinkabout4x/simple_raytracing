@@ -96,7 +96,6 @@ fn cast_ray(canvas_color: &Rgb<u8>, spheres: &Vec<Sphere>, origin: &Vector3<f32>
     let mut sphere_dist= f32::MAX;
     let mut pixel_color = *canvas_color;
     
-
     for sphere in spheres{
         match sphere.ray_intersect(&origin, &dir){
             Some(x) => {
@@ -105,22 +104,22 @@ fn cast_ray(canvas_color: &Rgb<u8>, spheres: &Vec<Sphere>, origin: &Vector3<f32>
                     let hit = origin + dir*sphere_dist;
                     let n = (hit - sphere.coordinates).normalize();
                     pixel_color = sphere.color;
-
-                    let mut diffuse_light_energy: f32 = 0.;
-                    for light in lights{
-                        let light_dir = (light.coordinates-hit).normalize();
-                        diffuse_light_energy += light.intensity * light_dir.dot(&n);
-                        
-                    }
-                    pixel_color = pixel_color.map(|x| {(((x as f32/255.)*diffuse_light_energy)*(255. as f32)) as u8});
-
+                    pixel_color = diffuse_light(&pixel_color, lights, &hit, &n);
                     
                 }
             }
             None => {}
         };
     }
-
     pixel_color
+}
 
+fn diffuse_light(color: &Rgb<u8>, lights: &Vec<Light> ,point: &Vector3<f32>, normal: &Vector3<f32>) -> Rgb<u8> {
+    let mut diffuse_light_energy: f32 = 0.;
+    for light in lights{
+        let light_dir = (light.coordinates-point).normalize();
+        diffuse_light_energy += light.intensity * light_dir.dot(normal);                
+    }
+    let result = color.map(|x| {(((x as f32/255.)*diffuse_light_energy)*(255. as f32)) as u8});
+    result
 }
