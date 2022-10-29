@@ -1,11 +1,11 @@
 use std::{f32::consts::PI};
-use image::{Rgb, RgbImage, Pixel};
-use nalgebra::{Vector3, Vector2, vector};
+use image::{Rgb, RgbImage};
+use nalgebra::{Vector3, vector};
 
 pub struct Image{
     width: u32,
     height: u32,
-    color: Rgb<u8>,
+    color: Vector3<f32>,
     image: RgbImage
 }
 
@@ -21,20 +21,21 @@ pub struct Light {
 }
 
 pub struct Material{
-    color: Rgb<u8>,
-    albedo: Vector2<f32>,
+    color: Vector3<f32>,
+    albedo: Vector3<f32>,
     specular_exponent: f32
 }
 
 impl Image{
-    pub fn new(width: u32, height: u32, color: [u8; 3]) -> Image{
-        let mut img = Image{width, height, image: RgbImage::new(width, height), color: Rgb(color)};
-        img.set_canvas_color(color);
+    pub fn new(width: u32, height: u32, color: [f32; 3]) -> Image{
+        let color = vector![color[0], color[1], color[2]];
+        let color_rgb = to_rgb(color);
+        let mut img = Image{width, height, image: RgbImage::new(width, height), color};
+        img.set_canvas_color(color_rgb);
         img
     }
 
-    pub fn set_canvas_color(&mut self, color: [u8; 3]) {
-        let color = Rgb(color);
+    fn set_canvas_color(&mut self, color: Rgb<u8>) {
         for (_, _, pixel) in self.image.enumerate_pixels_mut(){
             *pixel = color;
         }
@@ -48,7 +49,7 @@ impl Image{
             let y: f32 = -(2.*((y as f32)+0.5)/(self.height as f32)-1.)*(fov/2.).tan();
             let dir: Vector3<f32> = vector![x,y, -1.].normalize(); 
 
-            *pixel = cast_ray(&self.color, &spheres, &origin, &dir, &lights);
+            *pixel = to_rgb(cast_ray(&self.color, &spheres, &origin, &dir, &lights));
 
         }
     }
@@ -97,20 +98,28 @@ impl Light{
 }
 
 impl Material{
-    pub fn new(color: [u8; 3], albedo: [f32; 2], specular_exponent: f32) -> Material{
-        let color = Rgb(color);
-        let albedo = vector![albedo[0], albedo[1]];
+    pub fn new(color: [f32; 3], albedo: [f32; 3], specular_exponent: f32) -> Material{
+        let color = vector![color[0], color[1], color[2]];
+        let albedo = vector![albedo[0], albedo[1], albedo[2]];
         Material{color, albedo, specular_exponent}
     }
 }
 
-fn cast_ray(canvas_color: &Rgb<u8>, spheres: &Vec<Sphere>, origin: &Vector3<f32>, dir: &Vector3<f32>, lights: &Vec<Light>) -> Rgb<u8>{
+fn cast_ray(canvas_color: &Vector3<f32>, spheres: &Vec<Sphere>, origin: &Vector3<f32>, dir: &Vector3<f32>, lights: &Vec<Light>) -> Vector3<f32>{
     let mut pixel_color = *canvas_color;
 
     match ray_spheres_intersection(&origin, &dir, &spheres) {
         Some((hit,n, material)) => {
             let point = hit;
             let normal = n;
+
+            let reflect_dir = reflect(dir, &normal);
+            let reflect_orig = if reflect_dir.dot(&normal) < 0. {
+                point - normal*0.001
+            } else {
+                point + normal*0.001
+            };
+            let reflect_color = cast_ray(canvas_color, spheres, &reflect_orig, &reflect_dir, lights);
 
             let mut diffuse_light_intensity: f32 = 0.;
             let mut specular_light_intensity: f32 = 0.;
@@ -136,13 +145,8 @@ fn cast_ray(canvas_color: &Rgb<u8>, spheres: &Vec<Sphere>, origin: &Vector3<f32>
                 diffuse_light_intensity += light.intensity * f32::max(0.,light_dir.dot(&normal));  
                 specular_light_intensity += (f32::max(0.,reflect(&light_dir, &normal).dot(dir))).powf(material.specular_exponent)*light.intensity;
             }
-            let coeff = diffuse_light_intensity*material.albedo[0]+specular_light_intensity*material.albedo[1];
-            
-            pixel_color = color.map(|mut x| {
-                let value = (x as f32/255.)*(coeff);
-                x = (value*(255. as f32)) as u8;
-                x
-            });
+            let unit_vector: Vector3<f32> = vector![1.,1.,1.];
+            pixel_color = color*diffuse_light_intensity*material.albedo[0]+unit_vector*specular_light_intensity*material.albedo[1]+reflect_color*material.albedo[2];
         }
         None => {}
     };
@@ -170,4 +174,11 @@ fn ray_spheres_intersection<'a>(origin : &Vector3<f32>, dir:  &Vector3<f32>, sph
 
 fn reflect(i: &Vector3<f32>, n: &Vector3<f32>) -> Vector3<f32>{
     return i-2.*n*(i.dot(n));
+}
+
+fn to_rgb(norm_color : Vector3<f32>) -> Rgb<u8>{
+    let pixel_color = norm_color.map(|x| {
+    (x*(255. as f32)) as u8
+    });
+    Rgb([pixel_color[0], pixel_color[1], pixel_color[2]])
 }

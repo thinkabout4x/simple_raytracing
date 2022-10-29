@@ -1,15 +1,16 @@
 use simple_raytracing::{Image, Sphere, Light, Material};
 fn main() {
-    let mut picture = Image::new(1024,768, [50,180,200]);
+    let mut picture = Image::new(1024,768, [0.2,0.7,0.8]);
 
-    let ivory = Material::new([100,100,75], [0.6,0.3], 50.);
-    let red_rubber = Material::new([75,25,25], [0.9,0.1], 10.);
+    let ivory = Material::new([0.4,0.4,0.3], [0.6,0.3,0.1], 50.);
+    let red_rubber = Material::new([0.3,0.1,0.1], [0.9,0.1,0.0], 10.);
+    let mirror = Material::new([1.,1.,1.], [0.,10.,0.8], 1425.);
 
     let mut spheres: Vec<Sphere> = Vec::new();
     spheres.push(Sphere::new(2, [-3.,0.,-16.], &ivory));
-    spheres.push(Sphere::new(2, [-1.,-1.5,-12.], &red_rubber));
+    spheres.push(Sphere::new(2, [-1.,-1.5,-12.], &mirror));
     spheres.push(Sphere::new(3, [1.5,-0.5,-18.], &red_rubber));
-    spheres.push(Sphere::new(4, [7.,5.,-18.], &ivory));
+    spheres.push(Sphere::new(4, [7.,5.,-18.], &mirror));
 
 
     let mut lights: Vec<Light> = Vec::new();
