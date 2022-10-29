@@ -9,17 +9,21 @@ pub struct Image{
     image: RgbImage
 }
 
-pub struct Sphere{
+pub struct Sphere<'a>{
     radius: u32,
     coordinates: Vector3<f32>, 
-    color: Rgb<u8>,
-    albedo: Vector2<f32>,
-    specular_exponent: f32
+    material: &'a Material
 }
 
 pub struct Light {
     coordinates: Vector3<f32>,
     intensity: f32,
+}
+
+pub struct Material{
+    color: Rgb<u8>,
+    albedo: Vector2<f32>,
+    specular_exponent: f32
 }
 
 impl Image{
@@ -54,12 +58,10 @@ impl Image{
     }
 }
 
-impl Sphere{
-    pub fn new(radius: u32, coordinates: [f32; 3], color: [u8; 3], albedo: [f32; 2], specular_exponent: f32) -> Sphere{
+impl<'a> Sphere<'a>{
+    pub fn new(radius: u32, coordinates: [f32; 3], material: &Material) -> Sphere{
         let coordinates = vector![coordinates[0], coordinates[1], coordinates[2]];
-        let albedo = vector![albedo[0], albedo[1]];
-        let color = Rgb(color);
-        Sphere{ radius, coordinates, color, albedo, specular_exponent}
+        Sphere{ radius, coordinates, material}
     }
 
     fn ray_intersect(&self, &origin: &Vector3<f32>, &dir: &Vector3<f32>) -> Option<f32>{
@@ -83,7 +85,6 @@ impl Sphere{
                 return Some(t0);
             }
         }
-
     }
 
 }
@@ -95,10 +96,62 @@ impl Light{
     }
 }
 
+impl Material{
+    pub fn new(color: [u8; 3], albedo: [f32; 2], specular_exponent: f32) -> Material{
+        let color = Rgb(color);
+        let albedo = vector![albedo[0], albedo[1]];
+        Material{color, albedo, specular_exponent}
+    }
+}
+
 fn cast_ray(canvas_color: &Rgb<u8>, spheres: &Vec<Sphere>, origin: &Vector3<f32>, dir: &Vector3<f32>, lights: &Vec<Light>) -> Rgb<u8>{
-    let mut sphere_dist= f32::MAX;
     let mut pixel_color = *canvas_color;
-    
+
+    match ray_spheres_intersection(&origin, &dir, &spheres) {
+        Some((hit,n, material)) => {
+            let point = hit;
+            let normal = n;
+
+            let mut diffuse_light_intensity: f32 = 0.;
+            let mut specular_light_intensity: f32 = 0.;
+            let color = material.color;
+
+            for light in lights{
+                let light_dir = (light.coordinates-point).normalize();
+                let light_distance = (light.coordinates-point).norm();
+                let shadow_orig = if light_dir.dot(&normal) < 0. {
+                    point - normal*0.001
+                } else {
+                    point + normal*0.001
+                };
+
+                match ray_spheres_intersection(&shadow_orig, &light_dir, spheres){
+                    Some((shadow_pt, _,_)) => {
+                        if (shadow_pt- shadow_orig).norm() < light_distance{
+                            continue;
+                        }
+                    }
+                    None => {}
+                }
+                diffuse_light_intensity += light.intensity * f32::max(0.,light_dir.dot(&normal));  
+                specular_light_intensity += (f32::max(0.,reflect(&light_dir, &normal).dot(dir))).powf(material.specular_exponent)*light.intensity;
+            }
+            let coeff = diffuse_light_intensity*material.albedo[0]+specular_light_intensity*material.albedo[1];
+            
+            pixel_color = color.map(|mut x| {
+                let value = (x as f32/255.)*(coeff);
+                x = (value*(255. as f32)) as u8;
+                x
+            });
+        }
+        None => {}
+    };
+    pixel_color
+}
+
+fn ray_spheres_intersection<'a>(origin : &Vector3<f32>, dir:  &Vector3<f32>, spheres: &'a Vec<Sphere>) -> Option<(Vector3<f32>, Vector3<f32>, &'a Material)> {
+    let mut sphere_dist= f32::MAX;
+    let mut result = Option::None;
     for sphere in spheres{
         match sphere.ray_intersect(&origin, &dir){
             Some(x) => {
@@ -106,33 +159,13 @@ fn cast_ray(canvas_color: &Rgb<u8>, spheres: &Vec<Sphere>, origin: &Vector3<f32>
                     sphere_dist = x;
                     let hit = origin + dir*sphere_dist;
                     let n = (hit - sphere.coordinates).normalize();
-                    pixel_color = sphere.color;
-                    pixel_color = diffuse_and_specular_light(&pixel_color, lights, &hit, &n, dir, sphere);
-                    
+                    result = Some((hit,n, sphere.material));
                 }
             }
             None => {}
         };
     }
-    pixel_color
-}
-
-fn diffuse_and_specular_light(color: &Rgb<u8>, lights: &Vec<Light> ,point: &Vector3<f32>, normal: &Vector3<f32>, dir: &Vector3<f32>,sphere: &Sphere) -> Rgb<u8> {
-    let mut diffuse_light_intensity: f32 = 0.;
-    let mut specular_light_intensity: f32 = 0.;
-    for light in lights{
-        let light_dir = (light.coordinates-point).normalize();
-        diffuse_light_intensity += light.intensity * f32::max(0.,light_dir.dot(normal));  
-        specular_light_intensity += (f32::max(0.,reflect(&light_dir, normal).dot(dir))).powf(sphere.specular_exponent)*light.intensity;
-    }
-    let coeff = diffuse_light_intensity*sphere.albedo[0]+specular_light_intensity*sphere.albedo[1];
-
-    let result = color.map(|mut x| {
-        let value = (x as f32/255.)*(coeff);
-        x = (value*(255. as f32)) as u8;
-        x
-    });
-    result
+    return result;
 }
 
 fn reflect(i: &Vector3<f32>, n: &Vector3<f32>) -> Vector3<f32>{
