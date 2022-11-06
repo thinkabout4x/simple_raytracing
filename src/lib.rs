@@ -1,11 +1,10 @@
 use std::{f32::consts::PI};
-use image::{Rgb, RgbImage};
+use image::{Rgb, RgbImage, io::Reader};
 use nalgebra::{Vector3, vector};
 
 pub struct Image{
     width: u32,
     height: u32,
-    color: Vector3<f32>,
     image: RgbImage
 }
 
@@ -27,29 +26,28 @@ pub struct Material{
 }
 
 impl Image{
-    pub fn new(width: u32, height: u32, color: [f32; 3]) -> Image{
-        let color = vector![color[0], color[1], color[2]];
-        let color_rgb = to_rgb(color);
-        let mut img = Image{width, height, image: RgbImage::new(width, height), color};
-        img.set_canvas_color(color_rgb);
+    pub fn new(width: u32, height: u32) -> Image{
+        let img = Image{width, height, image: RgbImage::new(width, height)};
         img
     }
 
-    fn set_canvas_color(&mut self, color: Rgb<u8>) {
-        for (_, _, pixel) in self.image.enumerate_pixels_mut(){
-            *pixel = color;
-        }
+    pub fn read(path: &str) -> Image{
+        let img = Reader::open(path).unwrap().decode().unwrap();
+        let img_rgb = img.into_rgb8();
+        Image{width: img_rgb.width(), height: img_rgb.height(), image: img_rgb}
     }
 
-    pub fn render(&mut self, spheres: &Vec<Sphere>,  lights: &Vec<Light>){
-        let fov = PI/2.;
+
+    pub fn render(&mut self, envmap: &Image, spheres: &Vec<Sphere>,  lights: &Vec<Light>){
+
+        let fov = PI/2.5;
         let origin = vector![0.,0.,0.];
         for (x, y, pixel) in self.image.enumerate_pixels_mut(){
             let x: f32 = (2.*((x as f32)+0.5)/(self.width as f32)-1.)*(fov/2.).tan()*(self.width as f32)/(self.height as f32);
             let y: f32 = -(2.*((y as f32)+0.5)/(self.height as f32)-1.)*(fov/2.).tan();
             let dir: Vector3<f32> = vector![x,y, -1.].normalize(); 
 
-            *pixel = to_rgb(cast_ray(&self.color, &spheres, &origin, &dir, &lights));
+            *pixel = to_rgb(cast_ray(envmap, &spheres, &origin, &dir, &lights));
 
         }
     }
@@ -105,8 +103,11 @@ impl Material{
     }
 }
 
-fn cast_ray(canvas_color: &Vector3<f32>, spheres: &Vec<Sphere>, origin: &Vector3<f32>, dir: &Vector3<f32>, lights: &Vec<Light>) -> Vector3<f32>{
-    let mut pixel_color = *canvas_color;
+fn cast_ray(envmap: &Image, spheres: &Vec<Sphere>, origin: &Vector3<f32>, dir: &Vector3<f32>, lights: &Vec<Light>) -> Vector3<f32>{
+    
+    let x = ((dir[2].atan2(dir[0]) / (2.*PI)+ 0.5) *envmap.width as f32) as u32; //coordinetes in pixel on envmap in spherical coords.
+    let y = ((dir[1].acos() / PI) *envmap.height as f32) as u32;
+    let mut pixel_color = to_normal_rgb(envmap.image.get_pixel(x, y));
 
     match ray_spheres_intersection(&origin, &dir, &spheres) {
         Some((hit,n, material)) => {
@@ -115,11 +116,11 @@ fn cast_ray(canvas_color: &Vector3<f32>, spheres: &Vec<Sphere>, origin: &Vector3
 
             let reflect_dir = reflect(dir, &normal);
             let reflect_orig = if reflect_dir.dot(&normal) < 0. {
-                point - normal*0.001
+                point - normal*0.001  //move coordinate a little bit to make intersection
             } else {
                 point + normal*0.001
             };
-            let reflect_color = cast_ray(canvas_color, spheres, &reflect_orig, &reflect_dir, lights);
+            let reflect_color = cast_ray(envmap, spheres, &reflect_orig, &reflect_dir, lights);
 
             let mut diffuse_light_intensity: f32 = 0.;
             let mut specular_light_intensity: f32 = 0.;
@@ -181,4 +182,9 @@ fn to_rgb(norm_color : Vector3<f32>) -> Rgb<u8>{
     (x*(255. as f32)) as u8
     });
     Rgb([pixel_color[0], pixel_color[1], pixel_color[2]])
+}
+
+fn to_normal_rgb(rgb_color : &Rgb<u8>) -> Vector3<f32>{
+    let norm_color = vector![rgb_color[0] as f32/255., rgb_color[1] as f32/255., rgb_color[2] as f32/255.];
+    norm_color
 }

@@ -1,6 +1,7 @@
 use simple_raytracing::{Image, Sphere, Light, Material};
 fn main() {
-    let mut picture = Image::new(1024,768, [0.2,0.7,0.8]);
+    let mut picture = Image::new(1024,768);
+    let envmap = Image::read("envmap.jpg");
 
     let ivory = Material::new([0.4,0.4,0.3], [0.6,0.3,0.1], 50.);
     let red_rubber = Material::new([0.3,0.1,0.1], [0.9,0.1,0.0], 10.);
@@ -19,7 +20,7 @@ fn main() {
     lights.push(Light::new([30.,20.,30.], 1.7));
 
 
-    picture.render(&spheres, &lights);
+    picture.render(&envmap, &spheres, &lights);
 
     picture.save_image("sample_image.png");
 }
